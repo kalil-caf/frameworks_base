@@ -46,9 +46,6 @@ import com.android.internal.telephony.PhoneConstants;
 import com.android.internal.telephony.PhoneConstants.DataState;
 import com.android.settingslib.graph.SignalDrawable;
 import com.android.systemui.R;
-import com.android.systemui.statusbar.policy.FiveGServiceClient;
-import com.android.systemui.statusbar.policy.FiveGServiceClient.FiveGServiceState;
-import com.android.systemui.statusbar.policy.FiveGServiceClient.IFiveGStateListener;
 import com.android.systemui.statusbar.policy.NetworkController.IconState;
 import com.android.systemui.statusbar.policy.NetworkController.SignalCallback;
 import com.android.systemui.statusbar.policy.NetworkControllerImpl.Config;
@@ -90,12 +87,6 @@ public class MobileSignalController extends SignalController<
     private boolean mHideNoInternetState = false;
     private int mCallState = TelephonyManager.CALL_STATE_IDLE;
 
-    /****************************5G****************************/
-    private FiveGStateListener mFiveGStateListener;
-    private FiveGServiceState mFiveGState;
-    private final int NUM_LEVELS_ON_5G;
-    /**********************************************************/
-
     private ImsManager mImsManager;
     private ImsManager.Connector mImsManagerConnector;
 
@@ -115,8 +106,6 @@ public class MobileSignalController extends SignalController<
         mSubscriptionInfo = info;
         mPhoneStateListener = new MobilePhoneStateListener(info.getSubscriptionId(),
                 receiverLooper);
-        mFiveGStateListener = new FiveGStateListener();
-        mFiveGState = new FiveGServiceState();
         mNetworkNameSeparator = getStringIfExists(R.string.status_bar_network_name_separator);
         mNetworkNameDefault = getStringIfExists(
                 com.android.internal.R.string.lockscreen_carrier_default);
@@ -135,8 +124,6 @@ public class MobileSignalController extends SignalController<
         mLastState.iconGroup = mCurrentState.iconGroup = mDefaultIcons;
         // Get initial data sim state.
         updateDataSim();
-
-        NUM_LEVELS_ON_5G = FiveGServiceClient.getNumLevels(mContext);
 
         int phoneId = mSubscriptionInfo.getSimSlotIndex();
         mImsManager = ImsManager.getInstance(mContext, phoneId);
@@ -333,18 +320,6 @@ public class MobileSignalController extends SignalController<
         }
     }
 
-    public int getCurrent5GIconId() {
-        int level = mFiveGState.getSignalLevel();
-        if (mConfig.inflateSignalStrengths) {
-            level++;
-        }
-        boolean dataDisabled = mCurrentState.userSetup
-                && mCurrentState.iconGroup == TelephonyIcons.DATA_DISABLED;
-        boolean noInternet = mCurrentState.inetCondition == 0;
-        boolean cutOut = dataDisabled || noInternet;
-        return SignalDrawable.getState(level, NUM_LEVELS_ON_5G , cutOut);
-    }
-
     @Override
     public int getQsCurrentIconId() {
         if (mCurrentState.airplaneMode) {
@@ -411,13 +386,6 @@ public class MobileSignalController extends SignalController<
         final boolean dataDisabled = mCurrentState.iconGroup == TelephonyIcons.DATA_DISABLED
                 && mCurrentState.userSetup;
 
-        if ( is5GConnected() ) {
-            if ( mFiveGState.isConnectedOnSaMode()
-                    || mFiveGState.isConnectedOnNsaMode() && !dataDisabled ) {
-                icons = mFiveGState.getIconGroup();
-            }
-        }
-
         String contentDescription = getStringIfExists(getContentDescription());
         String dataContentDescription = getStringIfExists(icons.mDataContentDescription);
         if (mCurrentState.inetCondition == 0) {
@@ -427,7 +395,7 @@ public class MobileSignalController extends SignalController<
         // Show icon in QS when we are connected or data is disabled.
         boolean showDataIcon = mCurrentState.dataConnected || dataDisabled;
         IconState statusIcon = new IconState(mCurrentState.enabled && !mCurrentState.airplaneMode,
-                is5GConnected() ? getCurrent5GIconId() : getCurrentIconId(), contentDescription);
+            : getCurrentIconId(), contentDescription);
 
         int qsTypeIcon = 0;
         IconState qsIcon = null;
@@ -447,7 +415,7 @@ public class MobileSignalController extends SignalController<
                 && mCurrentState.activityOut;
         showDataIcon &= mCurrentState.isDefault || dataDisabled;
         int typeIcon = (showDataIcon || mConfig.alwaysShowDataRatIcon || mAlwasyShowTypeIcon
-                || mFiveGState.isConnectedOnSaMode() ) ? icons.mDataType : 0;
+                 ) ? icons.mDataType : 0;
         int volteIcon = mConfig.showVolteIcon && isVolteSwitchOn()   ? getVolteResId() : 0;
         if (DEBUG) {
             Log.d(mTag, "notifyListeners mAlwasyShowTypeIcon=" + mAlwasyShowTypeIcon
@@ -762,16 +730,6 @@ public class MobileSignalController extends SignalController<
         notifyListenersIfNecessary();
     }
 
-    public void registerFiveGStateListener(FiveGServiceClient client) {
-        int phoneId = SubscriptionManager.getPhoneId(mSubscriptionInfo.getSubscriptionId());
-        client.registerListener(phoneId, mFiveGStateListener);
-    }
-
-    public void unregisterFiveGStateListener(FiveGServiceClient client) {
-        int phoneId = SubscriptionManager.getPhoneId(mSubscriptionInfo.getSubscriptionId());
-        client.unregisterListener(phoneId);
-    }
-
     private boolean isDataRegisteredOnLte() {
         boolean registered = false;
         int dataType = getDataNetworkType();
@@ -782,11 +740,6 @@ public class MobileSignalController extends SignalController<
         return registered;
     }
 
-    private boolean is5GConnected() {
-        return mFiveGState.isConnectedOnSaMode()
-                || mFiveGState.isConnectedOnNsaMode() && isDataRegisteredOnLte();
-    }
-
     @Override
     public void dump(PrintWriter pw) {
         super.dump(pw);
@@ -795,7 +748,6 @@ public class MobileSignalController extends SignalController<
         pw.println("  mSignalStrength=" + mSignalStrength + ",");
         pw.println("  mDataState=" + mDataState + ",");
         pw.println("  mDataNetType=" + mDataNetType + ",");
-        pw.println("  mFiveGState=" + mFiveGState + ",");
     }
 
     class MobilePhoneStateListener extends PhoneStateListener {
@@ -873,16 +825,6 @@ public class MobileSignalController extends SignalController<
         }
     };
 
-    class FiveGStateListener implements IFiveGStateListener{
-
-        public void onStateChanged(FiveGServiceState state) {
-            if (DEBUG) {
-                Log.d(mTag, "onStateChanged: state=" + state);
-            }
-            mFiveGState = state;
-            notifyListeners();
-        }
-    }
 
     private ImsFeature.CapabilityCallback mCapabilityCallback = new ImsFeature.CapabilityCallback() {
         @Override
