@@ -367,7 +367,7 @@ public class NetworkControllerBaseTest extends SysuiTestCase {
                 iconArg.capture(),
                 any(),
                 typeIconArg.capture(),
-                anyInt(), anyBoolean(), anyBoolean(), 
+                anyInt(), anyBoolean(), anyBoolean(),
                 ArgumentCaptor.forClass(Integer.class).capture(),
                 anyString(), anyString(), anyBoolean(),
                 anyInt(), eq(roaming));
